@@ -23,6 +23,8 @@ export type {
   Env,
   ErrorHandler,
   Handler,
+  InferContext,
+  InferRouteContext,
   MiddlewareHandler,
   Next,
   NotFoundResponse,
