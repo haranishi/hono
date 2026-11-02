@@ -11,6 +11,8 @@ import type {
   Env,
   ExtractSchema,
   Handler,
+  InferContext,
+  InferRouteContext,
   InputToDataByTarget,
   MergePath,
   MergeSchemaPath,
@@ -4135,5 +4137,101 @@ describe('Routes before .use() with explicit paths (#4388)', () => {
       }
     }
     type verify = Expect<Equal<Expected, Actual>>
+  })
+})
+
+describe('InferContext and InferRouteContext', () => {
+  type AppEnv = {
+    Variables: {
+      user: { id: string }
+    }
+    Bindings: {
+      API_KEY: string
+    }
+  }
+
+  it('should infer Context from a single Handler or MiddlewareHandler', () => {
+    const queryValidator = validator('query', (v: { page?: string }) => ({
+      page: Number(v.page ?? 1),
+    }))
+    type ValidatorCtx = InferContext<typeof queryValidator>
+
+    const controller = (c: ValidatorCtx) => {
+      const query = c.req.valid('query')
+      expectTypeOf(query).toEqualTypeOf<{ page: number }>()
+    }
+    expectTypeOf(controller).toBeFunction()
+
+    const typedHandler: Handler<
+      AppEnv,
+      '/users/:id',
+      { in: { query: { q: string } }; out: { query: { q: string } } }
+    > = (c) => c.json({ id: c.req.param('id'), q: c.req.valid('query').q, user: c.var.user })
+
+    type HandlerCtx = InferContext<typeof typedHandler>
+    const handleUser = (c: HandlerCtx) => {
+      expectTypeOf(c.var.user).toEqualTypeOf<{ id: string }>()
+      expectTypeOf(c.env.API_KEY).toEqualTypeOf<string>()
+      expectTypeOf(c.req.param('id')).toEqualTypeOf<string>()
+      expectTypeOf(c.req.valid('query')).toEqualTypeOf<{ q: string }>()
+    }
+    expectTypeOf(handleUser).toBeFunction()
+  })
+
+  it('should infer merged Context from a tuple of middlewares/validators', () => {
+    const authMiddleware = createMiddleware<AppEnv, '/posts/:postId'>(async (_c, next) => {
+      await next()
+    })
+    const queryValidator = validator('query', () => ({
+      limit: 10,
+    }))
+    const jsonValidator = validator('json', () => ({
+      title: 'Hello',
+    }))
+
+    const middlewares = [authMiddleware, queryValidator, jsonValidator] as const
+    type TupleCtx = InferContext<typeof middlewares>
+
+    const postController = (c: TupleCtx) => {
+      expectTypeOf(c.var.user).toEqualTypeOf<{ id: string }>()
+      expectTypeOf(c.env.API_KEY).toEqualTypeOf<string>()
+      expectTypeOf(c.req.param('postId')).toEqualTypeOf<string>()
+      expectTypeOf(c.req.valid('query')).toEqualTypeOf<{ limit: number }>()
+      expectTypeOf(c.req.valid('json')).toEqualTypeOf<{ title: string }>()
+    }
+    expectTypeOf(postController).toBeFunction()
+  })
+
+  it('should infer Context from chained Hono routes via InferRouteContext and InferContext', () => {
+    const statusRoutes = new Hono<AppEnv>()
+      .get(
+        '/status/:serviceId',
+        validator('query', () => ({ order: 'asc' as 'asc' | 'desc' })),
+        (c) => c.json({ ok: true })
+      )
+      .post(
+        '/status/:serviceId',
+        validator('json', () => ({ force: false })),
+        (c) => c.json({ updated: true })
+      )
+
+    type GetCtx = InferRouteContext<typeof statusRoutes, '/status/:serviceId', 'get'>
+    type PostCtx = InferContext<typeof statusRoutes, '/status/:serviceId', 'POST'>
+    type GetCtxByMethodShorthand = InferRouteContext<typeof statusRoutes, 'get'>
+
+    const getController = (c: GetCtx) => {
+      expectTypeOf(c.var.user).toEqualTypeOf<{ id: string }>()
+      expectTypeOf(c.req.param('serviceId')).toEqualTypeOf<string>()
+      expectTypeOf(c.req.valid('query')).toEqualTypeOf<{ order: 'asc' | 'desc' }>()
+    }
+    const postController = (c: PostCtx) => {
+      expectTypeOf(c.var.user).toEqualTypeOf<{ id: string }>()
+      expectTypeOf(c.req.param('serviceId')).toEqualTypeOf<string>()
+      expectTypeOf(c.req.valid('json')).toEqualTypeOf<{ force: boolean }>()
+    }
+    type verifyShorthand = Expect<Equal<GetCtx, GetCtxByMethodShorthand>>
+
+    expectTypeOf(getController).toBeFunction()
+    expectTypeOf(postController).toBeFunction()
   })
 })

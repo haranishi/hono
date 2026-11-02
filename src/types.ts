@@ -2768,6 +2768,76 @@ export type IntersectNonAnyTypes<T extends any[]> = T extends [infer Head, ...in
   ? ProcessHead<Head> & IntersectNonAnyTypes<Rest>
   : {}
 
+type NormalizeMethodKey<M extends string> = M extends `$${infer Rest}`
+  ? `$${Lowercase<Rest>}`
+  : `$${Lowercase<M>}`
+
+type EndpointToContext<E extends Env, P extends string, Ep> = Ep extends {
+  input: infer In extends {}
+}
+  ? Context<
+      E,
+      P,
+      {} extends In
+        ? BlankInput
+        : {
+            in: In
+            out: In
+          }
+    >
+  : never
+
+type InferSchemaContextByPathAndMethod<
+  E extends Env,
+  S,
+  P extends keyof S & string,
+  M extends string = keyof S[P] & string,
+> = P extends unknown
+  ? {
+      [K in keyof S[P] & string & NormalizeMethodKey<M>]: EndpointToContext<E, P, S[P][K]>
+    }[keyof S[P] & string & NormalizeMethodKey<M>]
+  : never
+
+export type InferRouteContext<T, P extends string = string, M extends string = string> =
+  T extends HonoBase<infer E, any, any, any>
+    ? ExtractSchema<T> extends infer S
+      ? string extends P
+        ? InferSchemaContextByPathAndMethod<E, S, keyof S & string, M>
+        : P extends keyof S & string
+          ? InferSchemaContextByPathAndMethod<E, S, P, M>
+          : InferSchemaContextByPathAndMethod<E, S, keyof S & string, P>
+      : never
+    : never
+
+type MergeContextPaths<P1 extends string, P2 extends string> =
+  IsAny<P2> extends true ? P1 : string extends P2 ? (IsAny<P1> extends true ? P2 : P1) : P2
+
+type InferTupleContext<
+  T extends readonly any[],
+  AccE extends any[] = [],
+  AccP extends string = any,
+  AccI extends any[] = [],
+> = T extends readonly [infer Head, ...infer Tail]
+  ? Head extends (c: Context<infer E, infer P, infer I>, ...args: any[]) => any
+    ? InferTupleContext<Tail, [...AccE, E], MergeContextPaths<AccP, P>, [...AccI, I]>
+    : never
+  : Context<IntersectNonAnyTypes<AccE>, AccP, IntersectNonAnyTypes<AccI>>
+
+export type InferContext<T, P extends string = string, M extends string = string> = T extends (
+  c: infer C extends Context<any, any, any>,
+  ...args: any[]
+) => any
+  ? C
+  : T extends readonly [infer Only]
+    ? Only extends (c: infer C extends Context<any, any, any>, ...args: any[]) => any
+      ? C
+      : never
+    : T extends readonly [any, ...any[]]
+      ? InferTupleContext<T>
+      : T extends HonoBase<any, any, any, any>
+        ? InferRouteContext<T, P, M>
+        : never
+
 ////////////////////////////////////////
 //////                            //////
 //////         FetchEvent         //////
