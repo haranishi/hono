@@ -215,4 +215,30 @@ describe('JSON pretty by Middleware', () => {
 }`)
     expect(res.headers.get('Content-Length')).toBeNull()
   })
+
+  it('Should cancel the original response body stream when replacing with prettified JSON', async () => {
+    const app = new Hono()
+    let originalRes: Response | undefined
+    app.use('*', prettyJSON({ force: true }))
+    app.get('/x', () => {
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"message":"Hono!"}'))
+          controller.close()
+        },
+      })
+      originalRes = new Response(stream, {
+        headers: { 'Content-Type': 'application/json' },
+      })
+      return originalRes
+    })
+
+    const res = await app.request('http://localhost/x')
+    expect(res.status).toBe(200)
+    expect(await res.text()).toBe(`{
+  "message": "Hono!"
+}`)
+    const readResult = await originalRes!.body!.getReader().read()
+    expect(readResult.done).toBe(true)
+  })
 })
