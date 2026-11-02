@@ -306,5 +306,17 @@ describe('Server-Timing API', () => {
 
       consoleWarnSpy.mockRestore()
     })
+
+    it('Should append timing headers when response has immutable headers (e.g. Response.redirect)', async () => {
+      const redirectApp = new Hono()
+        .use('*', timing({ crossOrigin: true }))
+        .get('/redirect', () => Response.redirect('https://example.com', 302))
+
+      const res = await redirectApp.request('http://localhost/redirect')
+      expect(res.status).toBe(302)
+      expect(res.headers.get('location')).toBe('https://example.com/')
+      expect(res.headers.has('server-timing')).toBeTruthy()
+      expect(res.headers.get('timing-allow-origin')).toBe('*')
+    })
   })
 })
