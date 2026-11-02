@@ -27,18 +27,33 @@ export interface BunWebSocketData {
   protocol: string
 }
 
+const wsDataMap = new WeakMap<BunServerWebSocket<unknown>, BunWebSocketData>()
+
+const getWSData = (ws: BunServerWebSocket<BunWebSocketData>): BunWebSocketData | undefined => {
+  const cached = wsDataMap.get(ws)
+  if (cached) {
+    return cached
+  }
+  if (ws.data && typeof ws.data === 'object' && 'events' in ws.data) {
+    wsDataMap.set(ws, ws.data)
+    return ws.data
+  }
+  return ws.data
+}
+
 /**
  * @internal
  */
 export const createWSContext = (ws: BunServerWebSocket<BunWebSocketData>): WSContext => {
+  const data = getWSData(ws)
   return new WSContext({
     send: (source, options) => {
       ws.send(source, options?.compress)
     },
     raw: ws,
     readyState: ws.readyState,
-    url: ws.data.url,
-    protocol: ws.data.protocol,
+    url: data?.url,
+    protocol: data?.protocol,
     close(code, reason) {
       ws.close(code, reason)
     },
@@ -75,14 +90,14 @@ export const upgradeWebSocket: UpgradeWebSocket<any> = defineWebSocketHelper((c,
 
 export const websocket: BunWebSocketHandler<BunWebSocketData> = {
   open(ws) {
-    const websocketListeners = ws.data.events
-    if (websocketListeners.onOpen) {
+    const websocketListeners = getWSData(ws)?.events
+    if (websocketListeners?.onOpen) {
       websocketListeners.onOpen(new Event('open'), createWSContext(ws))
     }
   },
   close(ws, code, reason) {
-    const websocketListeners = ws.data.events
-    if (websocketListeners.onClose) {
+    const websocketListeners = getWSData(ws)?.events
+    if (websocketListeners?.onClose) {
       websocketListeners.onClose(
         new CloseEvent('close', {
           code,
@@ -93,8 +108,8 @@ export const websocket: BunWebSocketHandler<BunWebSocketData> = {
     }
   },
   message(ws, message) {
-    const websocketListeners = ws.data.events
-    if (websocketListeners.onMessage) {
+    const websocketListeners = getWSData(ws)?.events
+    if (websocketListeners?.onMessage) {
       const normalizedReceiveData: WSMessageReceive =
         typeof message === 'string' ? message : message.buffer
 

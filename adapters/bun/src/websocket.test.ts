@@ -156,6 +156,52 @@ describe('upgradeWebSocket()', () => {
     websocket.close(ws)
     expect(close).toBeCalled()
   })
+
+  it('Should continue dispatching events and preserving metadata when ws.raw.data is overwritten in onOpen', async () => {
+    const open = mock()
+    const message = mock()
+    const close = mock()
+    let messageUrl = null as URL | null
+    let messageProtocol = null as string | null
+
+    const ws: BunServerWebSocket<BunWebSocketData> = {
+      send: mock(),
+      close: mock(),
+      readyState: 1,
+      data: {
+        url: new URL('http://localhost/ws'),
+        protocol: 'chat',
+        events: {
+          onOpen(_evt, wsCtx) {
+            open()
+            ;(wsCtx.raw as { data: unknown }).data = { customUserId: 'u_123' }
+          },
+          onMessage(_evt, wsCtx) {
+            message()
+            messageUrl = wsCtx.url
+            messageProtocol = wsCtx.protocol
+            ;(wsCtx.raw as { data: unknown }).data = null
+          },
+          onClose() {
+            close()
+          },
+        },
+      },
+    }
+
+    websocket.open(ws)
+    expect(open).toBeCalledTimes(1)
+    expect(ws.data).toEqual({ customUserId: 'u_123' })
+
+    websocket.message(ws, 'hello')
+    expect(message).toBeCalledTimes(1)
+    expect(messageUrl?.href).toBe('http://localhost/ws')
+    expect(messageProtocol).toBe('chat')
+    expect(ws.data).toBeNull()
+
+    websocket.close(ws)
+    expect(close).toBeCalledTimes(1)
+  })
 })
 
 describe('createBunWebSocket()', () => {
