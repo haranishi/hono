@@ -500,4 +500,53 @@ describe('Etag Middleware', () => {
     expect(res2.headers.get('X-Custom-3')).toBeNull()
     expect(res2.headers.get('X-Custom-4')).toBeNull()
   })
+
+  it('Should cancel the original response body stream when returning 304', async () => {
+    let streamCancelled = false
+    let capturedGeneratedRes: Response | undefined
+
+    const app = new Hono()
+    app.use('/etag/*', etag())
+    app.get('/etag/preset-stream', (c) => {
+      const stream = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          controller.enqueue(new TextEncoder().encode('stream chunk'))
+        },
+        cancel() {
+          streamCancelled = true
+        },
+      })
+      return c.body(stream, 200, {
+        ETag: '"preset-stream-etag"',
+      })
+    })
+    app.get('/etag/generated-stream', (c) => {
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('Hono is hot'))
+          controller.close()
+        },
+      })
+      capturedGeneratedRes = c.body(stream)
+      return capturedGeneratedRes
+    })
+
+    const res1 = await app.request('http://localhost/etag/preset-stream', {
+      headers: {
+        'If-None-Match': '"preset-stream-etag"',
+      },
+    })
+    expect(res1.status).toBe(304)
+    expect(streamCancelled).toBe(true)
+
+    const res2 = await app.request('http://localhost/etag/generated-stream', {
+      headers: {
+        'If-None-Match': '"d104fafdb380655dab607c9bddc4d4982037afa1"',
+      },
+    })
+    expect(res2.status).toBe(304)
+    expect(capturedGeneratedRes?.body).not.toBeNull()
+    const readResult = await capturedGeneratedRes!.body!.getReader().read()
+    expect(readResult.done).toBe(true)
+  })
 })
