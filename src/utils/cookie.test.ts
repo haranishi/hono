@@ -313,6 +313,90 @@ describe('Set cookie', () => {
     )
   })
 
+  it('Should serialize __Http- cookie with all valid options', () => {
+    const serialized = serialize('__Http-great_cookie', 'banana', {
+      path: '/',
+      secure: true,
+      domain: 'example.com',
+      httpOnly: true,
+      maxAge: 1000,
+      expires: new Date(Date.UTC(2000, 11, 24, 10, 30, 59, 900)),
+      sameSite: 'Strict',
+      priority: 'High',
+      partitioned: true,
+    })
+    expect(serialized).toBe(
+      '__Http-great_cookie=banana; Max-Age=1000; Domain=example.com; Path=/; Expires=Sun, 24 Dec 2000 10:30:59 GMT; HttpOnly; Secure; SameSite=Strict; Priority=High; Partitioned'
+    )
+  })
+
+  it('Should serialize __Host-Http- cookie with all valid options', () => {
+    const serialized = serialize('__Host-Http-great_cookie', 'banana', {
+      path: '/',
+      secure: true,
+      httpOnly: true,
+      maxAge: 1000,
+      expires: new Date(Date.UTC(2000, 11, 24, 10, 30, 59, 900)),
+      sameSite: 'Strict',
+      priority: 'High',
+      partitioned: true,
+    })
+    expect(serialized).toBe(
+      '__Host-Http-great_cookie=banana; Max-Age=1000; Path=/; Expires=Sun, 24 Dec 2000 10:30:59 GMT; HttpOnly; Secure; SameSite=Strict; Priority=High; Partitioned'
+    )
+  })
+
+  it('Should throw Error for __Http- and __Host-Http- cookies missing required attributes', () => {
+    expect(() => {
+      // @ts-expect-error testing runtime check for missing secure
+      serialize('__Http-great_cookie', 'banana', {
+        httpOnly: true,
+      })
+    }).toThrowError('__Http- Cookie must have Secure attributes')
+
+    expect(() => {
+      // @ts-expect-error testing runtime check for missing httpOnly
+      serialize('__Http-great_cookie', 'banana', {
+        secure: true,
+      })
+    }).toThrowError('__Http- Cookie must have HttpOnly attributes')
+
+    expect(() => {
+      // @ts-expect-error testing runtime check for missing httpOnly
+      serialize('__Host-Http-great_cookie', 'banana', {
+        secure: true,
+        path: '/',
+      })
+    }).toThrowError('__Host-Http- Cookie must have HttpOnly attributes')
+
+    expect(() => {
+      // @ts-expect-error testing runtime check for missing secure
+      serialize('__Host-Http-great_cookie', 'banana', {
+        httpOnly: true,
+        path: '/',
+      })
+    }).toThrowError('__Host- Cookie must have Secure attributes')
+
+    expect(() => {
+      serialize('__Host-Http-great_cookie', 'banana', {
+        secure: true,
+        httpOnly: true,
+        // @ts-expect-error testing runtime check for non-root path
+        path: '/sub',
+      })
+    }).toThrowError('__Host- Cookie must have Path attributes with "/"')
+
+    expect(() => {
+      serialize('__Host-Http-great_cookie', 'banana', {
+        secure: true,
+        httpOnly: true,
+        path: '/',
+        // @ts-expect-error testing runtime check for domain
+        domain: 'example.com',
+      })
+    }).toThrowError('__Host- Cookie must not have Domain attributes')
+  })
+
   it('Should serialize a signed cookie', async () => {
     const secret = 'secret chocolate chips'
     const serialized = await serializeSigned('delicious_cookie', 'macha', secret)

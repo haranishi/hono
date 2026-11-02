@@ -24,18 +24,29 @@ interface GetSignedCookie {
   ): Promise<string | undefined | false>
 }
 
+const getCookiePrefixName = (key: string, prefix?: CookiePrefixOptions): string => {
+  if (prefix === 'secure') {
+    return '__Secure-' + key
+  }
+  if (prefix === 'host') {
+    return '__Host-' + key
+  }
+  if (prefix === 'http') {
+    return '__Http-' + key
+  }
+  if (prefix === 'host-http') {
+    return '__Host-Http-' + key
+  }
+  return key
+}
+
 export const getCookie: GetCookie = (c, key?, prefix?: CookiePrefixOptions) => {
   const cookie = c.req.raw.headers.get('Cookie')
   if (typeof key === 'string') {
     if (!cookie) {
       return undefined
     }
-    let finalKey = key
-    if (prefix === 'secure') {
-      finalKey = '__Secure-' + key
-    } else if (prefix === 'host') {
-      finalKey = '__Host-' + key
-    }
+    const finalKey = getCookiePrefixName(key, prefix)
     const obj = parse(cookie, finalKey)
     return obj[finalKey]
   }
@@ -58,12 +69,7 @@ export const getSignedCookie: GetSignedCookie = async (
     if (!cookie) {
       return undefined
     }
-    let finalKey = key
-    if (prefix === 'secure') {
-      finalKey = '__Secure-' + key
-    } else if (prefix === 'host') {
-      finalKey = '__Host-' + key
-    }
+    const finalKey = getCookiePrefixName(key, prefix)
     const obj = await parseSigned(cookie, secret, finalKey)
     return obj[finalKey]
   }
@@ -79,6 +85,7 @@ export const generateCookie = (name: string, value: string, opt?: CookieOptions)
   // Cookie names prefixed with __Secure- can be used only if they are set with the secure attribute.
   // Cookie names prefixed with __Host- can be used only if they are set with the secure attribute, must have a path of / (meaning any path at the host)
   // and must not have a Domain attribute.
+  // Cookie names prefixed with __Http- and __Host-Http- additionally require the HttpOnly attribute.
   // Read more at https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Set-Cookie#cookie_prefixes'
   let cookie
   if (opt?.prefix === 'secure') {
@@ -88,6 +95,21 @@ export const generateCookie = (name: string, value: string, opt?: CookieOptions)
       ...opt,
       path: '/',
       secure: true,
+      domain: undefined,
+    })
+  } else if (opt?.prefix === 'http') {
+    cookie = serialize('__Http-' + name, value, {
+      path: '/',
+      ...opt,
+      secure: true,
+      httpOnly: true,
+    })
+  } else if (opt?.prefix === 'host-http') {
+    cookie = serialize('__Host-Http-' + name, value, {
+      ...opt,
+      path: '/',
+      secure: true,
+      httpOnly: true,
       domain: undefined,
     })
   } else {
@@ -119,6 +141,21 @@ export const generateSignedCookie = async (
       ...opt,
       path: '/',
       secure: true,
+      domain: undefined,
+    })
+  } else if (opt?.prefix === 'http') {
+    cookie = await serializeSigned('__Http-' + name, value, secret, {
+      path: '/',
+      ...opt,
+      secure: true,
+      httpOnly: true,
+    })
+  } else if (opt?.prefix === 'host-http') {
+    cookie = await serializeSigned('__Host-Http-' + name, value, secret, {
+      ...opt,
+      path: '/',
+      secure: true,
+      httpOnly: true,
       domain: undefined,
     })
   } else {
