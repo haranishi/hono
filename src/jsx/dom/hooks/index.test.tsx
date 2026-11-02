@@ -124,6 +124,50 @@ describe('Hooks', () => {
         action: null,
       })
     })
+
+    it('should reset pending state when async action rejects', async () => {
+      let formReject: (reason?: unknown) => void = () => {}
+      const formPromise = new Promise<void>((_, r) => (formReject = r))
+      let status: ReturnType<typeof useFormStatus> | undefined
+      const Status = () => {
+        status = useFormStatus()
+        return null
+      }
+      const App = () => {
+        const action = useCallback(() => formPromise, [])
+        return (
+          <form action={action}>
+            <Status />
+            <input type='text' name='name' value='updated' />
+            <button>Submit</button>
+          </form>
+        )
+      }
+
+      render(<App />, root)
+      root.querySelector('button')?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(status).toEqual({
+        pending: true,
+        data: expect.any(FormData),
+        method: 'post',
+        action: expect.any(Function),
+      })
+      formReject(new Error('action failed'))
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(status).toEqual({
+        pending: false,
+        data: null,
+        method: null,
+        action: null,
+      })
+    })
   })
 
   describe('useOptimistic', () => {
@@ -167,6 +211,85 @@ describe('Hooks', () => {
       expect(root.innerHTML).toBe(
         '<form><div>2</div><input type="text" name="name" value="updated"><button>Submit</button></form>'
       )
+    })
+
+    it('should revert to original state when async action rejects', async () => {
+      let formReject: (reason?: unknown) => void = () => {}
+      const formPromise = new Promise<void>((_, r) => (formReject = r))
+      const App = () => {
+        const [count] = useState(0)
+        const [optimisticCount, setOptimisticCount] = useOptimistic(count, (_c, n: number) => n)
+        const action = useCallback(async () => {
+          setOptimisticCount(count + 1)
+          await formPromise
+        }, [])
+
+        return (
+          <form action={action}>
+            <div>{optimisticCount}</div>
+            <button>Submit</button>
+          </form>
+        )
+      }
+
+      render(<App />, root)
+      expect(root.innerHTML).toBe('<form><div>0</div><button>Submit</button></form>')
+      root.querySelector('button')?.click()
+      await Promise.resolve()
+      expect(root.innerHTML).toBe('<form><div>1</div><button>Submit</button></form>')
+      formReject(new Error('failed'))
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(root.innerHTML).toBe('<form><div>0</div><button>Submit</button></form>')
+    })
+
+    it('should wait for all actions to settle when one action rejects', async () => {
+      let rejectFirst: (reason?: unknown) => void = () => {}
+      let resolveSecond: () => void = () => {}
+      const firstPromise = new Promise<void>((_, r) => (rejectFirst = r))
+      const secondPromise = new Promise<void>((r) => (resolveSecond = r))
+      let callCount = 0
+      const App = () => {
+        const [count] = useState(0)
+        const [optimisticCount, setOptimisticCount] = useOptimistic(count, (_c, n: number) => n)
+        const action = useCallback(async () => {
+          callCount++
+          setOptimisticCount(callCount)
+          await (callCount === 1 ? firstPromise : secondPromise)
+        }, [])
+
+        return (
+          <form action={action}>
+            <div>{optimisticCount}</div>
+            <button>Submit</button>
+          </form>
+        )
+      }
+
+      render(<App />, root)
+      expect(root.innerHTML).toBe('<form><div>0</div><button>Submit</button></form>')
+      root.querySelector('button')?.click()
+      await Promise.resolve()
+      expect(root.innerHTML).toBe('<form><div>1</div><button>Submit</button></form>')
+      root.querySelector('button')?.click()
+      await Promise.resolve()
+      expect(root.innerHTML).toBe('<form><div>2</div><button>Submit</button></form>')
+
+      rejectFirst(new Error('first failed'))
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(root.innerHTML).toBe('<form><div>2</div><button>Submit</button></form>')
+
+      resolveSecond()
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(root.innerHTML).toBe('<form><div>0</div><button>Submit</button></form>')
     })
   })
 })

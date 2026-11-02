@@ -31,7 +31,7 @@ export const FormContext: Context<FormStatus> = createContext<FormStatus>({
 const actions: Set<Promise<unknown>> = new Set()
 export const registerAction = (action: Promise<unknown>) => {
   actions.add(action)
-  action.finally(() => actions.delete(action))
+  action.finally(() => actions.delete(action)).catch(() => {})
 }
 
 /**
@@ -55,9 +55,12 @@ export const useOptimistic = <T, N>(
 ): [T, (action: N) => void] => {
   const [optimisticState, setOptimisticState] = useState(state)
   if (actions.size > 0) {
-    Promise.all(actions).finally(() => {
+    ;(async () => {
+      while (actions.size > 0) {
+        await Promise.allSettled(actions)
+      }
       setOptimisticState(state)
-    })
+    })()
   } else {
     setOptimisticState(state)
   }
